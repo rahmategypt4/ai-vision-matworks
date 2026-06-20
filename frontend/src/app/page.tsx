@@ -1,3 +1,5 @@
+"use client";  // ← tambah ini
+
 import { Hero } from "@/components/hero";
 import { Navbar } from "@/components/navbar";
 import { PageContent } from "@/components/page-content";
