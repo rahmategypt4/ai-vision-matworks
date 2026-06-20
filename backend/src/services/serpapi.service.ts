@@ -18,7 +18,7 @@ interface SerpApiShoppingResponse {
   error?: string;
 }
 
-const MARKET_LOCALE: Record<
+const MARKET_LOCALE: Record
   Language,
   { gl: string; hl: string; currency: string; googleDomain: string }
 > = {
@@ -81,7 +81,7 @@ export async function searchGoogleShopping(
     const data = (await res.json()) as SerpApiShoppingResponse;
     if (data.error || !Array.isArray(data.shopping_results)) return [];
 
-    return data.shopping_results.slice(0, limit).map((item): MarketListing => {
+    const allListings = data.shopping_results.map((item): MarketListing => {
       const priceText = item.price ?? "";
       return {
         title: item.title ?? "-",
@@ -93,6 +93,16 @@ export async function searchGoogleShopping(
         source: item.source ?? "Google Shopping",
       };
     });
+
+    // Filter listing yang currencynya sesuai bahasa yang dipilih user.
+    // Kalau tidak ada sama sekali (misal barang Indonesia dijual dalam IDR
+    // padahal user pilih EN/JP), fallback ke semua listing.
+    const filtered = allListings.filter(
+      (l) => l.priceCurrency === locale.currency
+    );
+    const result = filtered.length > 0 ? filtered : allListings;
+
+    return result.slice(0, limit);
   } catch {
     return [];
   }
