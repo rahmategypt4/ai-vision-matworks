@@ -56,8 +56,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
+const FALLBACK: LanguageContextValue = {
+  language: "id",
+  setLanguage: () => {},
+  t: DICTS["id"],
+  meta: LANGUAGE_META["id"],
+};
+
 export function useLanguage(): LanguageContextValue {
   const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error("useLanguage must be used within LanguageProvider");
-  return ctx;
+  return ctx ?? FALLBACK;
 }
