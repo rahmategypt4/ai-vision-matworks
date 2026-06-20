@@ -19,6 +19,12 @@
   --color-warning-soft: #fff4e0;
   --color-danger: #c0392b;
   --color-danger-soft: #fdecea;
+
+  --amz-hero-bg: #0c2340;
+  --amz-bg: #ffffff;
+  --amz-accent: #f2c94c;
+  --amz-navy: #0c2340;
+  --amz-navy-light: #16365e;
 }
 
 html, body {
