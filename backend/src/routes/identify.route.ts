@@ -71,16 +71,20 @@ export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
       fastify.log.warn({ err }, "Google Shopping lookup failed — continuing without market data");
     }
 
-    // Save to MySQL
-    await insertIdentification({
-      id,
-      sessionId,
-      imageUrl,
-      mimeType,
-      fileSizeBytes,
-      ...result,
-      aiModel: AI_MODEL,
-    });
+    // Save to MySQL (best-effort — identify still works without a database)
+    try {
+      await insertIdentification({
+        id,
+        sessionId,
+        imageUrl,
+        mimeType,
+        fileSizeBytes,
+        ...result,
+        aiModel: AI_MODEL,
+      });
+    } catch (err) {
+      fastify.log.warn({ err }, "Failed to save identification to database — continuing without persistence");
+    }
 
     return reply.status(200).send({ id, ...result, imageUrl, marketQuery, marketListings });
   });

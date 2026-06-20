@@ -36,7 +36,16 @@ async function start(): Promise<void> {
     fastify.log.info("Testing MySQL connection...");
     await testConnection();
     fastify.log.info("MySQL connected.");
+  } catch (err) {
+    // Non-fatal: history/persistence features will be unavailable, but
+    // the core identify flow (OpenAI Vision) does not require a database.
+    fastify.log.warn(
+      { err },
+      "MySQL unavailable — starting without database. History features will be disabled."
+    );
+  }
 
+  try {
     await fastify.listen({ port: PORT, host: HOST });
     fastify.log.info(`Backend running at http://${HOST}:${PORT}`);
   } catch (err) {

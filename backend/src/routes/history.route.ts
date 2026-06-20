@@ -20,8 +20,13 @@ export async function historyRoute(fastify: FastifyInstance): Promise<void> {
     }
 
     const { sessionId, page, pageSize } = parseResult.data;
-    const history = await getHistory(sessionId, page, pageSize);
-    return reply.status(200).send(history);
+    try {
+      const history = await getHistory(sessionId, page, pageSize);
+      return reply.status(200).send(history);
+    } catch (err) {
+      fastify.log.warn({ err }, "History unavailable — no database connection");
+      return reply.status(200).send({ data: [], total: 0, page, pageSize, totalPages: 0 });
+    }
   });
 
   // DELETE /history/:id
