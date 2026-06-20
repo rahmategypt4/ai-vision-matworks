@@ -1,6 +1,9 @@
 // Shared types between routes, services, and DB layer
 
-export type ItemCondition = "Baik" | "Sedang" | "Rusak";
+export type Language = "en" | "id" | "ja";
+
+// Condition is a localized label string (e.g. "Baik" / "Good" / "良好").
+export type ItemCondition = string;
 
 export interface IdentifyItemResult {
   name: string;
@@ -10,8 +13,10 @@ export interface IdentifyItemResult {
   category: string;
   condition: ItemCondition;
   conditionNotes: string;
+  // Legacy column names — values are now in `priceCurrency` (per-language).
   priceMinIDR: number;
   priceMaxIDR: number;
+  priceCurrency: string;
   description: string;
 }
 
@@ -40,6 +45,7 @@ export interface IdentificationRecord {
   conditionNotes: string;
   priceMinIDR: number;
   priceMaxIDR: number;
+  priceCurrency?: string;
   description: string;
   aiModel: string;
   createdAt: Date;

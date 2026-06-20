@@ -1,5 +1,8 @@
+"use client";
+
 import { ImageOff } from "lucide-react";
 import { formatMarketPrice } from "@/lib/utils";
+import { useLanguage } from "@/components/language-context";
 import type { MarketListing } from "@/types";
 
 interface MarketSectionProps {
@@ -8,14 +11,17 @@ interface MarketSectionProps {
 }
 
 export function MarketSection({ query, listings }: MarketSectionProps) {
+  const { language, t } = useLanguage();
   return (
     <section className="mx-auto max-w-3xl px-4 pb-16">
       <div className="mb-4 flex items-end justify-between">
         <h2 className="text-base font-semibold text-[var(--color-text)]">
-          Produk dengan tampilan serupa
+          {t.market.title}
         </h2>
         {query && (
-          <span className="text-xs text-[var(--color-text-muted)]">{listings.length} hasil</span>
+          <span className="text-xs text-[var(--color-text-muted)]">
+            {t.market.resultsCount(listings.length)}
+          </span>
         )}
       </div>
 
@@ -43,7 +49,7 @@ export function MarketSection({ query, listings }: MarketSectionProps) {
                   </div>
                 )}
                 <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-semibold text-white">
-                  {formatMarketPrice(item.price, item.priceCurrency, item.priceText)}
+                  {formatMarketPrice(item.price, item.priceCurrency, item.priceText, language)}
                 </span>
               </div>
               <p className="mt-2 line-clamp-2 text-xs text-[var(--color-text)]">{item.title}</p>
@@ -54,9 +60,7 @@ export function MarketSection({ query, listings }: MarketSectionProps) {
       ) : (
         <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-white px-6 py-10 text-center">
           <p className="text-sm text-[var(--color-text-muted)]">
-            {query
-              ? `Tidak ada hasil untuk "${query}".`
-              : "Upload sebuah foto untuk melihat produk serupa di sini."}
+            {query ? t.market.emptyWithQuery(query) : t.market.emptyNoQuery}
           </p>
         </div>
       )}

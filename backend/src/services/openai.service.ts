@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import type { IdentifyItemResult } from "../types/index.js";
+import type { IdentifyItemResult, Language } from "../types/index.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -17,28 +17,73 @@ const RawSchema = z.object({
   category: z.string().nullable().optional(),
   condition: z.string().nullable().optional(),
   conditionNotes: z.string().nullable().optional(),
+  priceMin: z.union([z.number(), z.string()]).nullable().optional(),
+  priceMax: z.union([z.number(), z.string()]).nullable().optional(),
+  // Back-compat with older IDR-only prompt
   priceMinIDR: z.union([z.number(), z.string()]).nullable().optional(),
   priceMaxIDR: z.union([z.number(), z.string()]).nullable().optional(),
   description: z.string().nullable().optional(),
 });
 
-const SYSTEM_PROMPT =
-  "Anda asisten penilai barang bekas di Indonesia dengan keahlian mengenali merek dan model produk secara spesifik. " +
-  "Identifikasi barang pada foto dengan SANGAT detail. " +
-  "Jawab HANYA dalam JSON valid (tanpa markdown/```), dengan field persis:\n" +
-  '{"name": string, "brand": string|null, "modelSeries": string|null, "productCode": string|null, ' +
-  '"category": string, "condition": "Baik"|"Sedang"|"Rusak", ' +
-  '"conditionNotes": string, "priceMinIDR": number, "priceMaxIDR": number, "description": string}\n' +
-  "Untuk 'brand': nama merek produk (contoh: 'Cannondale', 'Apple', 'Nikon'). " +
-  "Untuk 'modelSeries': nama model/seri spesifik termasuk varian/grade jika terlihat dari tulisan, logo, atau desain pada produk " +
-  "(contoh: 'SuperSix EVO LAB71', 'iPhone 15 Pro Max', 'D850'). " +
-  "Untuk 'productCode': kode model/SKU/part number jika terlihat tercetak/tertera pada produk (contoh: 'A2849', 'CN-RZ100-W'); " +
-  "jika tidak terlihat, gunakan null — JANGAN mengarang kode. " +
-  "Jika brand/modelSeries tidak dapat dipastikan dengan yakin, gunakan null untuk field tersebut, jangan menebak sembarangan. " +
-  "Untuk 'name': nama umum barang dalam Bahasa Indonesia (contoh: 'Sepeda Balap', 'Ponsel Pintar'). " +
-  "Harga dalam Rupiah sebagai angka (tanpa titik/koma/teks). Semua teks deskriptif dalam Bahasa Indonesia. " +
-  "Jika gambar tidak dapat diidentifikasi, gunakan name='Tidak dikenali', brand=null, modelSeries=null, productCode=null, " +
-  "category='-', condition='Sedang', priceMinIDR=0, priceMaxIDR=0.";
+interface LanguageConfig {
+  langName: string;
+  currency: string;
+  currencyName: string;
+  market: string;
+  conditionLabels: { good: string; fair: string; poor: string };
+  unknownLabel: string;
+  userPrompt: string;
+}
+
+const LANGUAGE_CONFIGS: Record<Language, LanguageConfig> = {
+  id: {
+    langName: "Bahasa Indonesia",
+    currency: "IDR",
+    currencyName: "Rupiah",
+    market: "Indonesia",
+    conditionLabels: { good: "Baik", fair: "Sedang", poor: "Rusak" },
+    unknownLabel: "Tidak dikenali",
+    userPrompt: "Identifikasi barang bekas pada foto ini. Balas JSON saja.",
+  },
+  en: {
+    langName: "English",
+    currency: "USD",
+    currencyName: "US Dollars",
+    market: "United States",
+    conditionLabels: { good: "Good", fair: "Fair", poor: "Poor" },
+    unknownLabel: "Unrecognized",
+    userPrompt: "Identify the used item in this photo. Respond with JSON only.",
+  },
+  ja: {
+    langName: "日本語 (Japanese)",
+    currency: "JPY",
+    currencyName: "Japanese Yen",
+    market: "Japan",
+    conditionLabels: { good: "良好", fair: "普通", poor: "難あり" },
+    unknownLabel: "識別不可",
+    userPrompt: "この写真の中古品を識別してください。JSONのみで返答してください。",
+  },
+};
+
+function buildSystemPrompt(cfg: LanguageConfig): string {
+  return (
+    `You are a used-goods appraisal assistant for the ${cfg.market} market with deep expertise in recognizing brands and product models. ` +
+    `Identify the item in the photo in HIGH detail. ` +
+    `Reply ONLY with valid JSON (no markdown, no code fences), with exactly these fields:\n` +
+    `{"name": string, "brand": string|null, "modelSeries": string|null, "productCode": string|null, ` +
+    `"category": string, "condition": "${cfg.conditionLabels.good}"|"${cfg.conditionLabels.fair}"|"${cfg.conditionLabels.poor}", ` +
+    `"conditionNotes": string, "priceMin": number, "priceMax": number, "description": string}\n` +
+    `IMPORTANT: All human-readable text fields (name, category, conditionNotes, description) MUST be written in ${cfg.langName}. ` +
+    `For 'brand': the product brand name (e.g. 'Cannondale', 'Apple', 'Nikon'). ` +
+    `For 'modelSeries': the specific model/series name including variant/grade if visible from text, logo, or design on the product ` +
+    `(e.g. 'SuperSix EVO LAB71', 'iPhone 15 Pro Max', 'D850'). ` +
+    `For 'productCode': SKU/part number if visibly printed on the product; null if not visible — DO NOT invent codes. ` +
+    `If brand/modelSeries cannot be determined with confidence, use null — do not guess. ` +
+    `'priceMin' and 'priceMax' must be numbers (no separators, no text) representing the current second-hand market price range in ${cfg.currencyName} (${cfg.currency}) for the ${cfg.market} market. ` +
+    `If the image cannot be identified, use name='${cfg.unknownLabel}', brand=null, modelSeries=null, productCode=null, ` +
+    `category='-', condition='${cfg.conditionLabels.fair}', priceMin=0, priceMax=0.`
+  );
+}
 
 function toNumber(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
@@ -49,11 +94,12 @@ function toNumber(v: unknown): number {
   return 0;
 }
 
-function normalizeCondition(v: unknown): "Baik" | "Sedang" | "Rusak" {
+function normalizeCondition(v: unknown, cfg: LanguageConfig): string {
   const s = String(v ?? "").toLowerCase();
-  if (/(rusak|buruk|jelek|broken|poor)/.test(s)) return "Rusak";
-  if (/(sangat baik|bagus|mulus|baik|good|excellent|like new)/.test(s)) return "Baik";
-  return "Sedang";
+  if (/(rusak|buruk|jelek|broken|poor|難あり|破損)/.test(s)) return cfg.conditionLabels.poor;
+  if (/(sangat baik|bagus|mulus|baik|good|excellent|like new|良好|美品)/.test(s)) return cfg.conditionLabels.good;
+  if (/(sedang|fair|普通)/.test(s)) return cfg.conditionLabels.fair;
+  return cfg.conditionLabels.fair;
 }
 
 function extractJSON(raw: string): unknown {
@@ -69,45 +115,47 @@ function extractJSON(raw: string): unknown {
 function cleanNullableString(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
-  if (!s || /^(null|n\/a|none|tidak diketahui|unknown|-)$/i.test(s)) return null;
+  if (!s || /^(null|n\/a|none|tidak diketahui|unknown|不明|-)$/i.test(s)) return null;
   return s;
 }
 
-function normalize(raw: z.infer<typeof RawSchema>): IdentifyItemResult {
-  let min = toNumber(raw.priceMinIDR);
-  let max = toNumber(raw.priceMaxIDR);
+function normalize(raw: z.infer<typeof RawSchema>, cfg: LanguageConfig): IdentifyItemResult {
+  let min = toNumber(raw.priceMin ?? raw.priceMinIDR);
+  let max = toNumber(raw.priceMax ?? raw.priceMaxIDR);
   if (max < min) [min, max] = [max, min];
   return {
-    name: (raw.name ?? "").trim() || "Tidak dikenali",
+    name: (raw.name ?? "").trim() || cfg.unknownLabel,
     brand: cleanNullableString(raw.brand),
     modelSeries: cleanNullableString(raw.modelSeries),
     productCode: cleanNullableString(raw.productCode),
     category: (raw.category ?? "").trim() || "-",
-    condition: normalizeCondition(raw.condition),
+    condition: normalizeCondition(raw.condition, cfg),
     conditionNotes: (raw.conditionNotes ?? "").trim() || "-",
-    priceMinIDR: min,
+    priceMinIDR: min, // legacy column name; value is in `priceCurrency`
     priceMaxIDR: max,
+    priceCurrency: cfg.currency,
     description: (raw.description ?? "").trim() || "-",
   };
 }
 
 export async function identifyItemWithGPT4(
   imageBase64: string,
-  mimeType: string
+  mimeType: string,
+  language: Language = "id"
 ): Promise<IdentifyItemResult> {
+  const cfg = LANGUAGE_CONFIGS[language] ?? LANGUAGE_CONFIGS.id;
   const dataUrl = `data:${mimeType};base64,${imageBase64}`;
 
-  // Primary: ask for JSON via response_format
   const response = await client.chat.completions.create({
     model: AI_MODEL,
     max_tokens: 1536,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt(cfg) },
       {
         role: "user",
         content: [
-          { type: "text", text: "Identifikasi barang bekas pada foto ini. Balas JSON saja." },
+          { type: "text", text: cfg.userPrompt },
           { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
         ],
       },
@@ -118,10 +166,9 @@ export async function identifyItemWithGPT4(
 
   try {
     const parsed = RawSchema.parse(extractJSON(rawText));
-    return normalize(parsed);
+    return normalize(parsed, cfg);
   } catch {
-    // Fallback: try bare parse
     const parsed = RawSchema.parse(JSON.parse(rawText));
-    return normalize(parsed);
+    return normalize(parsed, cfg);
   }
 }

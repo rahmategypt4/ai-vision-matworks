@@ -11,6 +11,7 @@ const BodySchema = z.object({
   mimeType: z.string().regex(/^image\/(png|jpe?g|webp|gif|heic|heif)$/i, "Invalid mime type"),
   fileSizeBytes: z.number().int().positive(),
   sessionId: z.string().min(1),
+  language: z.enum(["en", "id", "ja"]).optional().default("id"),
 });
 
 export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
@@ -23,17 +24,16 @@ export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
       });
     }
 
-    const { imageBase64, mimeType, fileSizeBytes, sessionId } = parseResult.data;
+    const { imageBase64, mimeType, fileSizeBytes, sessionId, language } = parseResult.data;
 
-    const MAX_BYTES = 8 * 1024 * 1024; // 8MB base64 ≈ ~6MB actual
+    const MAX_BYTES = 8 * 1024 * 1024;
     if (imageBase64.length > MAX_BYTES) {
       return reply.status(413).send({ error: "Gambar terlalu besar. Maksimum sekitar 6MB." });
     }
 
-    // Call OpenAI GPT-4o
     let result;
     try {
-      result = await identifyItemWithGPT4(imageBase64, mimeType);
+      result = await identifyItemWithGPT4(imageBase64, mimeType, language);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       fastify.log.error({ err }, "OpenAI error");
@@ -48,7 +48,6 @@ export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
       });
     }
 
-    // Optional S3 upload
     const id = uuidv4();
     let imageUrl: string | null = null;
     try {
@@ -62,16 +61,14 @@ export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
       fastify.log.warn({ err }, "S3 upload failed — continuing without image URL");
     }
 
-    // Fetch real-time market listings from Google Shopping (best-effort, never blocks)
     const marketQuery = buildMarketQuery(result);
     let marketListings: Awaited<ReturnType<typeof searchGoogleShopping>> = [];
     try {
-      marketListings = await searchGoogleShopping(marketQuery);
+      marketListings = await searchGoogleShopping(marketQuery, { language });
     } catch (err) {
       fastify.log.warn({ err }, "Google Shopping lookup failed — continuing without market data");
     }
 
-    // Save to MySQL (best-effort — identify still works without a database)
     try {
       await insertIdentification({
         id,
@@ -86,6 +83,13 @@ export async function identifyRoute(fastify: FastifyInstance): Promise<void> {
       fastify.log.warn({ err }, "Failed to save identification to database — continuing without persistence");
     }
 
-    return reply.status(200).send({ id, ...result, imageUrl, marketQuery, marketListings });
+    return reply.status(200).send({
+      id,
+      ...result,
+      imageUrl,
+      marketQuery,
+      marketListings,
+      language,
+    });
   });
 }

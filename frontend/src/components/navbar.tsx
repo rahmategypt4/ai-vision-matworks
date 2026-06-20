@@ -1,8 +1,12 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { useLanguage } from "@/components/language-context";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 export function Navbar() {
+  const { t } = useLanguage();
+
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
@@ -17,7 +21,7 @@ export function Navbar() {
             <Search className="h-4 w-4 text-[var(--color-text-muted)]" />
             <input
               type="text"
-              placeholder="Cari barang, brand, atau kategori"
+              placeholder={t.nav.searchPlaceholder}
               className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--color-text-muted)]"
             />
           </div>
@@ -25,13 +29,14 @@ export function Navbar() {
 
         {/* Right */}
         <nav className="ml-auto flex items-center gap-5 text-sm text-[var(--color-text-muted)]">
-          <a href="#identify" className="hidden hover:text-[var(--color-text)] sm:inline">Identifikasi</a>
-          <a href="#identify" className="hidden hover:text-[var(--color-text)] sm:inline">Riwayat</a>
+          <a href="#identify" className="hidden hover:text-[var(--color-text)] sm:inline">{t.nav.identify}</a>
+          <a href="#identify" className="hidden hover:text-[var(--color-text)] sm:inline">{t.nav.history}</a>
+          <LanguageSwitcher />
           <a
             href="#identify"
             className="rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-primary-hover)]"
           >
-            Mulai
+            {t.nav.start}
           </a>
         </nav>
       </div>

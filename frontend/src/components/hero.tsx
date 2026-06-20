@@ -1,4 +1,7 @@
+"use client";
+
 import { Bike, Watch, Camera, Smartphone, Sofa, Guitar, ShoppingBag, Package } from "lucide-react";
+import { useLanguage } from "@/components/language-context";
 
 const COLLAGE_TILES: { icon: typeof Bike; bg: string; rotate: string }[] = [
   { icon: Bike, bg: "#FDE7C8", rotate: "-rotate-3" },
@@ -12,29 +15,29 @@ const COLLAGE_TILES: { icon: typeof Bike; bg: string; rotate: string }[] = [
 ];
 
 export function Hero() {
+  const { t } = useLanguage();
   return (
     <section id="top" className="relative overflow-hidden" style={{ background: "var(--amz-hero-bg)" }}>
       <div className="mx-auto max-w-6xl px-4 py-10 md:py-14 grid md:grid-cols-2 gap-8 items-center">
         {/* Copy */}
         <div className="order-2 md:order-1">
           <p className="text-sm font-semibold tracking-wide uppercase mb-2" style={{ color: "var(--amz-accent)" }}>
-            Jual Barang Bekas, Tanpa Tebak-Tebakan
+            {t.hero.eyebrow}
           </p>
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white leading-tight">
-            Foto, Identifikasi,
+            {t.hero.title1}
             <br />
-            Cek Harga Pasaran
+            {t.hero.title2}
           </h1>
           <p className="mt-3 text-sm md:text-base text-[#d5dbe1] max-w-md">
-            Upload foto barang bekas kamu — AI mengenali nama, merek, model, hingga kondisi,
-            lalu membandingkan dengan harga pasaran terkini dari Google Shopping.
+            {t.hero.subtitle}
           </p>
           <a
             href="#identify"
             className="inline-flex mt-5 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold transition-transform hover:scale-[1.02]"
             style={{ background: "var(--amz-accent)", color: "var(--amz-navy)" }}
           >
-            Mulai Identifikasi
+            {t.hero.cta}
           </a>
         </div>
 
@@ -54,7 +57,6 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Bottom curve / divider into page */}
       <div
         className="absolute bottom-0 left-0 right-0 h-10"
         style={{

@@ -1,4 +1,4 @@
-import type { IdentifyItemResult, MarketListing } from "../types/index.js";
+import type { IdentifyItemResult, Language, MarketListing } from "../types/index.js";
 
 const SERPAPI_ENDPOINT = "https://serpapi.com/search.json";
 
@@ -18,22 +18,24 @@ interface SerpApiShoppingResponse {
   error?: string;
 }
 
-/**
- * Build the most specific search query possible from the AI identification result.
- * Falls back from brand+model+code -> brand+model -> name+category.
- */
+const MARKET_LOCALE: Record<
+  Language,
+  { gl: string; hl: string; currency: string; googleDomain: string }
+> = {
+  id: { gl: "id", hl: "id", currency: "IDR", googleDomain: "google.co.id" },
+  en: { gl: "us", hl: "en", currency: "USD", googleDomain: "google.com" },
+  ja: { gl: "jp", hl: "ja", currency: "JPY", googleDomain: "google.co.jp" },
+};
+
 export function buildMarketQuery(result: IdentifyItemResult): string {
   const parts: string[] = [];
-
   if (result.brand) parts.push(result.brand);
   if (result.modelSeries) parts.push(result.modelSeries);
   if (result.productCode) parts.push(result.productCode);
-
   if (parts.length === 0) {
-    if (result.name && result.name !== "Tidak dikenali") parts.push(result.name);
+    if (result.name && !/tidak dikenali|unrecognized|識別不可/i.test(result.name)) parts.push(result.name);
     if (result.category && result.category !== "-") parts.push(result.category);
   }
-
   return parts.join(" ").trim();
 }
 
@@ -41,7 +43,6 @@ function parsePriceText(priceText: string | undefined): number | null {
   if (!priceText) return null;
   const cleaned = priceText.replace(/[^\d.,]/g, "");
   if (!cleaned) return null;
-  // Handle formats like "1,234.56" or "1.234,56"
   const normalized = cleaned.includes(",") && cleaned.includes(".")
     ? cleaned.replace(/,/g, "")
     : cleaned.replace(",", ".");
@@ -49,28 +50,23 @@ function parsePriceText(priceText: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Query Google Shopping via SerpAPI for current market listings.
- * Returns an empty array (never throws) if the API key is missing,
- * the query is empty, or the request fails — so this is always
- * safe to call from the identify route without blocking the response.
- */
 export async function searchGoogleShopping(
   query: string,
-  options?: { gl?: string; hl?: string; limit?: number }
+  options?: { language?: Language; limit?: number }
 ): Promise<MarketListing[]> {
   const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey || !query.trim()) return [];
 
+  const language: Language = options?.language ?? "id";
+  const locale = MARKET_LOCALE[language] ?? MARKET_LOCALE.id;
   const limit = options?.limit ?? 8;
-  const gl = options?.gl ?? "id"; // Indonesia
-  const hl = options?.hl ?? "id";
 
   const params = new URLSearchParams({
     engine: "google_shopping",
     q: query,
-    gl,
-    hl,
+    gl: locale.gl,
+    hl: locale.hl,
+    google_domain: locale.googleDomain,
     api_key: apiKey,
   });
 
@@ -90,7 +86,7 @@ export async function searchGoogleShopping(
       return {
         title: item.title ?? "-",
         price: item.extracted_price ?? parsePriceText(priceText),
-        priceCurrency: item.currency ?? (gl === "id" ? "IDR" : "USD"),
+        priceCurrency: item.currency ?? locale.currency,
         priceText: priceText || "-",
         link: item.product_link ?? item.link ?? "",
         thumbnail: item.thumbnail ?? null,
@@ -98,8 +94,6 @@ export async function searchGoogleShopping(
       };
     });
   } catch {
-    // Network error, timeout, or invalid JSON — fail silently,
-    // identification result remains usable without market data.
     return [];
   }
 }

@@ -5,8 +5,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2, RefreshCw, History } from "lucide-react";
 import { identifyItem } from "@/lib/api";
 import { getSessionId } from "@/lib/session";
-import { formatIDR } from "@/lib/utils";
-import type { IdentifyResponse } from "@/types";
+import { formatPrice } from "@/lib/utils";
+import { useLanguage } from "@/components/language-context";
+import { CONDITION_TO_KEY, type ConditionKey, type IdentifyResponse } from "@/types";
 
 function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
@@ -20,14 +21,15 @@ function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }>
   });
 }
 
-const CONDITION_STYLE: Record<string, string> = {
-  Baik: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
-  Sedang: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-  Rusak: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
+const CONDITION_STYLE: Record<ConditionKey, string> = {
+  Good: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  Fair: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  Poor: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
 };
 
 export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyResponse | null) => void }) {
   const qc = useQueryClient();
+  const { language, t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -36,7 +38,7 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
   const mutation = useMutation<IdentifyResponse, Error, File>({
     mutationFn: async (f) => {
       const { base64, mimeType } = await fileToBase64(f);
-      return identifyItem(base64, mimeType, f.size, getSessionId());
+      return identifyItem(base64, mimeType, f.size, getSessionId(), language);
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["history"] });
@@ -50,7 +52,6 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
     setPreviewUrl(URL.createObjectURL(f));
     mutation.reset();
     onResult?.(null);
-    // auto-identify untuk pengalaman lebih simpel
     mutation.mutate(f);
   };
 
@@ -63,24 +64,25 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
   };
 
   const result = mutation.data;
+  const conditionKey: ConditionKey | undefined = result
+    ? CONDITION_TO_KEY[String(result.condition)] ?? "Fair"
+    : undefined;
 
   return (
     <div className="space-y-5">
-      {/* Title */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-[var(--color-text)]">
-          Cari produk serupa lewat gambar
+          {t.identify.sectionTitle}
         </h2>
         <button
           type="button"
           className="hidden items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-alt)] sm:inline-flex"
         >
           <History className="h-3.5 w-3.5" />
-          Riwayat Pencarian
+          {t.identify.historyChip}
         </button>
       </div>
 
-      {/* Upload zone */}
       <label
         htmlFor="file-input"
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -97,17 +99,17 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
         }}
       >
         {previewUrl ? (
-          <img src={previewUrl} alt="Pratinjau" className="max-h-64 w-auto rounded-lg object-contain" />
+          <img src={previewUrl} alt="Preview" className="max-h-64 w-auto rounded-lg object-contain" />
         ) : (
           <>
-            <p className="text-sm text-[var(--color-text)]">Tarik foto ke sini</p>
-            <p className="my-2 text-xs text-[var(--color-text-muted)]">— atau —</p>
+            <p className="text-sm text-[var(--color-text)]">{t.identify.dropHere}</p>
+            <p className="my-2 text-xs text-[var(--color-text-muted)]">{t.identify.or}</p>
             <span className="inline-flex items-center gap-2 rounded-md border border-[var(--color-primary)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-soft)]">
               <Camera className="h-4 w-4" />
-              Pilih gambar
+              {t.identify.pickImage}
             </span>
             <p className="mt-3 text-[11px] text-[var(--color-text-muted)]">
-              JPG, PNG, WEBP · maks ~6MB
+              {t.identify.fileHint}
             </p>
           </>
         )}
@@ -121,16 +123,15 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
         onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
       />
 
-      {/* Status row */}
       {file && (
         <div className="flex items-center justify-between text-sm">
           {mutation.isPending ? (
             <span className="flex items-center gap-2 text-[var(--color-text-muted)]">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Menganalisis gambar…
+              {t.identify.analyzing}
             </span>
           ) : (
-            <span className="text-[var(--color-text-muted)]">Siap untuk analisis baru</span>
+            <span className="text-[var(--color-text-muted)]">{t.identify.ready}</span>
           )}
           <button
             onClick={onReset}
@@ -138,20 +139,18 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs hover:bg-[var(--color-surface-alt)] disabled:opacity-40"
           >
             <RefreshCw className="h-3 w-3" />
-            Ganti foto
+            {t.identify.changePhoto}
           </button>
         </div>
       )}
 
-      {/* Error */}
       {mutation.isError && (
         <div className="rounded-lg border border-[#f5c6c0] bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
           {mutation.error.message}
         </div>
       )}
 
-      {/* Result */}
-      {result && (
+      {result && conditionKey && (
         <div className="rounded-xl border border-[var(--color-border)] bg-white p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -160,12 +159,12 @@ export function IdentifyCard({ onResult }: { onResult?: (result: IdentifyRespons
               </h3>
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{result.category}</p>
             </div>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${CONDITION_STYLE[result.condition] ?? ""}`}>
-              {result.condition}
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${CONDITION_STYLE[conditionKey]}`}>
+              {t.result.condition[conditionKey]}
             </span>
           </div>
           <p className="mt-3 text-lg font-semibold text-[var(--color-text)]">
-            {formatIDR(result.priceMinIDR)} – {formatIDR(result.priceMaxIDR)}
+            {formatPrice(result.priceMinIDR, language, result.priceCurrency)} – {formatPrice(result.priceMaxIDR, language, result.priceCurrency)}
           </p>
           {result.description && (
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">{result.description}</p>
